@@ -1,0 +1,37 @@
+benchmark/test_spectrogram.py
+  h_ac9ce7f8b7c0d1 1-4,6-7,10-11,13-14,16-92
+  s_f10903983568eb::t_4f60d1e418e0ef 5,8-9,12,15
+benchmark/conftest.py
+  s_f10903983568eb::t_126d7bbd916ce7 46
+.gitignore
+  h_ac9ce7f8b7c0d1 4-5
+pyproject.toml
+  h_ac9ce7f8b7c0d1 52-88
+src/flag_audio/runtime/backend/backend_utils.py
+  s_f10903983568eb::t_7d4b7da15b038c 29-33
+op_list.txt
+  h_ac9ce7f8b7c0d1 25
+src/flag_audio/ops/spectrogram.py
+  h_ac9ce7f8b7c0d1 1-376
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "9c90b2be37026da4a85222d53a73350c33bafad2",
+  "prompts": {},
+  "humans": {
+    "h_ac9ce7f8b7c0d1": {
+      "author": "xugh3 <xugh3@chinatelecom.cn>"
+    }
+  },
+  "sessions": {
+    "s_f10903983568eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f2b781a0-602e-4355-8f08-6deb4c94e571",
+        "model": "glm-5.2"
+      },
+      "human_author": "xugh3 <xugh3@chinatelecom.cn>"
+    }
+  }
+}
