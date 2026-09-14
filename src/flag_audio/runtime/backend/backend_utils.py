@@ -26,6 +26,11 @@ class VendorInfoBase:
     device_query_cmd: str
     dispatch_key: str = None
     triton_extra_name: str = None
+    trademark: str = None
+    fp64_enabled: bool = True
+    bf16_enabled: bool = True
+    int64_enabled: bool = True
+    tle_enabled: bool = False
 
 
 def get_tune_config(vendor_name=None, file_mode="r", file_path=None):
