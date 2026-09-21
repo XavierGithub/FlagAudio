@@ -13,7 +13,7 @@
 # limitations under the License.
 
 [build-system]
-requires = ["setuptools>=64.0"]
+requires = ["setuptools>=64.0", "scikit-build-core>=0.11", "pybind11"]
 build-backend = "setuptools.build_meta"
 
 
@@ -98,3 +98,9 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "flag_audio.runtime" = ["*/**/*.yaml"]
+
+[tool.scikit-build]
+build.verbose = true
+logging.level = "INFO"
+wheel.install-dir = "flag_audio"
+build-dir = "build/{cache_tag}"
