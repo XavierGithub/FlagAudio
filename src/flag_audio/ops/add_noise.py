@@ -55,14 +55,23 @@ def finalize_scale_kernel(
     snr_ptr,  # (batch,)
     scale_ptr,  # (batch,)
     T,
+    FINALIZE_BLOCK: tl.constexpr,
 ):
     b = tl.program_id(0)
+    base = b * T
     energy_w = 0.0
     energy_n = 0.0
-    # 只剩标量累加，循环再长也很便宜
-    for tile in range(T):
-        energy_w += tl.load(partial_w_ptr + b * T + tile)
-        energy_n += tl.load(partial_n_ptr + b * T + tile)
+    # 每次让 FINALIZE_BLOCK 个线程并行加载一段部分和，再在 block 内归约成标量。
+    # T <= FINALIZE_BLOCK 时循环只走一轮；T 更大时自动分多轮，两种情况都正确。
+    for start in range(0, T, FINALIZE_BLOCK):
+        idx = start + tl.arange(0, FINALIZE_BLOCK)
+        mask = idx < T
+        energy_w += tl.sum(
+            tl.load(partial_w_ptr + base + idx, mask=mask, other=0.0)
+        )
+        energy_n += tl.sum(
+            tl.load(partial_n_ptr + base + idx, mask=mask, other=0.0)
+        )
 
     original_snr_db = (tl.log(energy_w) - tl.log(energy_n)) / tl.log(10.0) * 10
     scale = tl.exp(
@@ -149,6 +158,7 @@ def add_noise(
         snr_flat,
         scale,
         T,
+        FINALIZE_BLOCK=256,
     )
 
     # 分配输出
