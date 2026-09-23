@@ -18,31 +18,56 @@ import triton.language as tl
 
 
 @triton.jit
-def cal_noise_scale_kernel(
+def partial_energy_kernel(
     waveform_ptr,  # (batch, L)
     noise_ptr,  # (batch, L)
-    snr_ptr,  # (batch,)
     lengths_ptr,  # (batch,) or None
-    scale_ptr,  # (batch,)
-    L: tl.constexpr,
+    partial_w_ptr,  # (batch, T)
+    partial_n_ptr,  # (batch, T)
+    L,
+    T,
     has_lengths: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
 ):
-    b = tl.program_id(0)
-    batch_length = tl.load(lengths_ptr + b) if has_lengths else L
-    block_cnt = (batch_length + BLOCK_SIZE - 1) // BLOCK_SIZE
-    scale_w = 0.0
-    scale_n = 0.0
-    for i in range(block_cnt):
-        offset = i * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-        mask = offset < batch_length
-        w = tl.load(waveform_ptr + b * L + offset, mask=mask, other=0.0)
-        scale_w += tl.sum(w * w)
-        n = tl.load(noise_ptr + b * L + offset, mask=mask, other=0.0)
-        scale_n += tl.sum(n * n)
+    # 一维 grid 共 B*T 个 block，自己解出"第几条音频、第几段"
+    pid = tl.program_id(0)
+    b = pid // T
+    tile = pid % T
 
-    snr = (tl.log(scale_w) - tl.log(scale_n)) / tl.log(10.0) * 10
-    scale = tl.exp((snr - tl.load(snr_ptr + b)) / 20 * tl.log(10.0))
+    offsets = tile * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    # 两层 mask：段边界 + lengths 有效区
+    mask = offsets < L
+    if has_lengths:
+        length = tl.load(lengths_ptr + b)
+        mask = mask & (offsets < length)
+
+    w = tl.load(waveform_ptr + b * L + offsets, mask=mask, other=0.0)
+    n = tl.load(noise_ptr + b * L + offsets, mask=mask, other=0.0)
+    # block 内先做一次树形归约，每个 block 只输出两个标量
+    tl.store(partial_w_ptr + b * T + tile, tl.sum(w * w))
+    tl.store(partial_n_ptr + b * T + tile, tl.sum(n * n))
+
+
+@triton.jit
+def finalize_scale_kernel(
+    partial_w_ptr,  # (batch, T)
+    partial_n_ptr,  # (batch, T)
+    snr_ptr,  # (batch,)
+    scale_ptr,  # (batch,)
+    T,
+):
+    b = tl.program_id(0)
+    energy_w = 0.0
+    energy_n = 0.0
+    # 只剩标量累加，循环再长也很便宜
+    for tile in range(T):
+        energy_w += tl.load(partial_w_ptr + b * T + tile)
+        energy_n += tl.load(partial_n_ptr + b * T + tile)
+
+    original_snr_db = (tl.log(energy_w) - tl.log(energy_n)) / tl.log(10.0) * 10
+    scale = tl.exp(
+        (original_snr_db - tl.load(snr_ptr + b)) / 20 * tl.log(10.0)
+    )
     tl.store(scale_ptr + b, scale)
 
 
@@ -86,37 +111,59 @@ def add_noise(
         raise ValueError(
             f"Length dimensions of waveform and noise don't match (got {L} and {noise.size(-1)})."
         )
-    # 展平前导维度
-    total_elements = waveform.numel()
-    batch_size = total_elements // L
+    # 展平前导维度：不管原来几维，统一看成 (B, L)
+    total_elements = waveform.numel()  # 张量里元素总数
+    batch_size = total_elements // L  # 总数 ÷ 每条长度 = 条数
+    # reshape 保证内存连续，kernel 里才能用 b*L+offset 直接寻址
+    waveform_2d = waveform.reshape(batch_size, L)
+    noise_2d = noise.reshape(batch_size, L)
+    snr_flat = snr.reshape(batch_size)
+    lengths_flat = lengths.reshape(batch_size) if lengths is not None else None
 
-    scale = torch.zeros(batch_size, device=waveform.device)
     BLOCK_SIZE = 256
+    T = triton.cdiv(L, BLOCK_SIZE)  # 一条音频被切成多少段
     has_lengths = lengths is not None
-    cal_noise_scale_kernel[(batch_size,)](
-        waveform,
-        noise,
-        snr,
-        lengths,
-        scale,
+
+    # 中间缓冲区：每条音频、每段各一个部分和
+    partial_w = torch.empty(batch_size, T, device=waveform.device)
+    partial_n = torch.empty(batch_size, T, device=waveform.device)
+
+    # 阶段1：B*T 个 block，在 batch 维和 L 维上同时并行
+    partial_energy_kernel[(batch_size * T,)](
+        waveform_2d,
+        noise_2d,
+        lengths_flat,
+        partial_w,
+        partial_n,
         L,
+        T,
         has_lengths,
         BLOCK_SIZE=BLOCK_SIZE,
     )
 
+    # 阶段2：B 个 block 汇总部分和，算最终 scale
+    scale = torch.empty(batch_size, device=waveform.device)
+    finalize_scale_kernel[(batch_size,)](
+        partial_w,
+        partial_n,
+        snr_flat,
+        scale,
+        T,
+    )
+
     # 分配输出
-    output = torch.empty_like(waveform)
-    grid = (triton.cdiv(L, BLOCK_SIZE), batch_size)
+    output = torch.empty_like(waveform_2d)
+    grid = (T, batch_size)
     apply_noise_kernel[grid](
-        waveform,
-        noise,
+        waveform_2d,
+        noise_2d,
         scale,
         output,
         L,
         BLOCK_SIZE=BLOCK_SIZE,
     )
 
-    return output
+    return output.reshape(waveform.shape)
 
 
 def test_op():
