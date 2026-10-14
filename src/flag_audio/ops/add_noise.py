@@ -43,9 +43,12 @@ def partial_energy_kernel(
 
     w = tl.load(waveform_ptr + b * L + offsets, mask=mask, other=0.0)
     n = tl.load(noise_ptr + b * L + offsets, mask=mask, other=0.0)
+    # 低精度输入也在 fp32 下做平方和归约，避免舍入误差随 L 累积
+    w_fp32 = w.to(tl.float32)
+    n_fp32 = n.to(tl.float32)
     # block 内先做一次树形归约，每个 block 只输出两个标量
-    tl.store(partial_w_ptr + b * T + tile, tl.sum(w * w))
-    tl.store(partial_n_ptr + b * T + tile, tl.sum(n * n))
+    tl.store(partial_w_ptr + b * T + tile, tl.sum(w_fp32 * w_fp32))
+    tl.store(partial_n_ptr + b * T + tile, tl.sum(n_fp32 * n_fp32))
 
 
 @triton.jit
