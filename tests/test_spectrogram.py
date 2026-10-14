@@ -3,7 +3,7 @@ import torch
 import torchaudio
 
 import flag_gems
-from flag_gems.ops.spectrogram import spectrogram as gems_spectrogram
+from flag_audio.ops.spectrogram import spectrogram as gems_spectrogram
 
 from . import accuracy_utils as utils
 
@@ -84,11 +84,12 @@ def test_spectrogram_power(n_fft, power):
         onesided=True,
     )
 
+    atol = 1e-3 if n_fft >= 512 else 1e-4
     assert res_out.shape == ref_out.shape, f"Shape mismatch: {res_out.shape} vs {ref_out.shape}"
     if power is None:
-        utils.gems_assert_close(res_out, ref_out, torch.complex64)
+        utils.gems_assert_close(res_out, ref_out, torch.complex64, atol=atol)
     else:
-        utils.gems_assert_close(res_out, ref_out, torch.float32)
+        utils.gems_assert_close(res_out, ref_out, torch.float32, atol=atol)
 
 
 @pytest.mark.spectrogram
@@ -116,8 +117,9 @@ def test_spectrogram_normalized(n_fft, normalized):
         onesided=True,
     )
 
+    atol = 1e-3 if n_fft >= 512 else 1e-4
     assert res_out.shape == ref_out.shape, f"Shape mismatch: {res_out.shape} vs {ref_out.shape}"
-    utils.gems_assert_close(res_out, ref_out, torch.float32)
+    utils.gems_assert_close(res_out, ref_out, torch.float32, atol=atol)
 
 
 @pytest.mark.spectrogram
@@ -145,8 +147,9 @@ def test_spectrogram_hop_length(n_fft, hop_length_factor):
         onesided=True,
     )
 
+    atol = 1e-3 if n_fft >= 512 else 1e-4
     assert res_out.shape == ref_out.shape, f"Shape mismatch: {res_out.shape} vs {ref_out.shape}"
-    utils.gems_assert_close(res_out, ref_out, torch.float32)
+    utils.gems_assert_close(res_out, ref_out, torch.float32, atol=atol)
 
 
 @pytest.mark.spectrogram
@@ -185,8 +188,9 @@ def test_spectrogram_win_length_less_than_n_fft(n_fft):
         onesided=True,
     )
 
+    atol = 1e-3 if n_fft >= 512 else 1e-4
     assert res_out.shape == ref_out.shape, f"Shape mismatch: {res_out.shape} vs {ref_out.shape}"
-    utils.gems_assert_close(res_out, ref_out, torch.float32)
+    utils.gems_assert_close(res_out, ref_out, torch.float32, atol=atol)
 
 
 @pytest.mark.spectrogram

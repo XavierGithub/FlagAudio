@@ -63,11 +63,11 @@ def mock_rand(size, **kwargs):
 @pytest.mark.parametrize("mask_value", [0.0])
 @pytest.mark.parametrize("axis", [3])
 @pytest.mark.parametrize("p", [1])
-def test_accuracy_mask_along_axis_iid(shape, dtype,mask_param, mask_value, axis, p):
+def test_accuracy_mask_along_axis_iid(shape, dtype,mask_param, mask_value, axis, p, monkeypatch):
     input_tensor = torch.randn(shape, dtype=dtype, device=flag_audio.device)
     ref_inp1_tensor = to_reference(input_tensor, True)
 
-    torch.rand = mock_rand
+    monkeypatch.setattr(torch, "rand", mock_rand)
     ref_out = torchaudio.functional.mask_along_axis_iid(ref_inp1_tensor, mask_param, mask_value, axis, p)
     res_out = flag_audio.ops.mask_along_axis_iid(input_tensor, mask_param, mask_value, axis, p)
 
@@ -80,11 +80,11 @@ def test_accuracy_mask_along_axis_iid(shape, dtype,mask_param, mask_value, axis,
 @pytest.mark.parametrize("mask_value", [0.0])
 @pytest.mark.parametrize("axis", [2])
 @pytest.mark.parametrize("p", [0.5])
-def test_accuracy_mask_along_axis(shape, dtype,mask_param, mask_value, axis, p):
+def test_accuracy_mask_along_axis(shape, dtype,mask_param, mask_value, axis, p, monkeypatch):
     input_tensor = torch.randn(shape, dtype=dtype, device=flag_audio.device)
     ref_inp1_tensor = to_reference(input_tensor, True)
 
-    torch.rand = mock_rand
+    monkeypatch.setattr(torch, "rand", mock_rand)
     ref_out = torchaudio.functional.mask_along_axis(ref_inp1_tensor, mask_param, mask_value, axis, p)
     res_out = flag_audio.ops.mask_along_axis(input_tensor, mask_param, mask_value, axis, p)
 
