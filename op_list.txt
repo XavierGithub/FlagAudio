@@ -22,4 +22,5 @@ amplitude_to_DB
 dcshift
 spectral_centroid
 add_noise
+convolve
 spectrogram

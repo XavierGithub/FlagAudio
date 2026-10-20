@@ -3,3 +3,6 @@ __pycache__/
 .vscode/
 src/flag_audio.egg-info/
 result.json
+zip/
+.trae/
+DEV_COMMANDS.md

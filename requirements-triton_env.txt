@@ -1,0 +1,36 @@
+# FlagAudio 开发环境依赖（conda 环境名：triton_env，Python 3.12）
+#
+# 从零安装步骤：
+#   conda create -n triton_env python=3.12 -y
+#   conda activate triton_env
+#   pip install -r requirements-triton_env.txt
+#   pip install -e .[test]          # 安装 FlagAudio 自身（可编辑模式）
+#
+# 运行时必须设置：export BLAS_VENDOR=nvidia
+
+# --- GPU 版 PyTorch（CUDA 13，RTX 3090 验证通过）---
+--extra-index-url https://download.pytorch.org/whl/cu130
+torch==2.11.0+cu130
+torchaudio==2.11.0+cu130
+
+# --- Triton ---
+# 必须 3.8.0：torch 默认 pin 的 3.6.0 需要 GLIBC_2.29，本机 RHEL 8.5 为 glibc 2.28
+triton==3.8.0
+
+# --- FlagGems ---
+# 5.3.6 仅在官方 PyPI 提供（USTC 镜像只同步到 5.0.2），故追加官方源
+--extra-index-url https://pypi.org/simple
+flag_gems==5.3.6
+# 注意：flagtree 0.6.1 需要 GLIBC_2.38，本机不可用，未安装
+
+# --- CUDA Python 库（对应 CUDA 13）---
+# pyproject 中声明的 cupy-cuda12x 找不到 libcublas.so.12，改用 cuda13x 版本
+cupy-cuda13x==14.2.0
+
+# --- 科学计算与测试 ---
+numpy==2.5.3
+scipy==1.18.1
+pytest==9.1.1
+pybind11==3.1.0
+PyYAML==6.0.1
+SQLAlchemy==2.0.48

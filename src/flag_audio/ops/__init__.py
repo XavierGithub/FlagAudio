@@ -22,6 +22,7 @@ from flag_audio.ops.amplitude_to_DB import amplitude_to_DB
 from flag_audio.ops.dcshift import dcshift
 from flag_audio.ops.spectral_centroid import spectral_centroid
 from flag_audio.ops.add_noise import add_noise
+from flag_audio.ops.convolve import convolve
 
 __all__ = [
     "DB_to_amplitude",
@@ -33,5 +34,6 @@ __all__ = [
     "amplitude_to_DB",
     "dcshift",
     "spectral_centroid",
-    "add_noise"
+    "add_noise",
+    "convolve",
 ]

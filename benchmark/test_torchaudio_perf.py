@@ -279,3 +279,29 @@ def test_perf_add_noise(length_factor):
     )
     bench.set_gems(flag_audio.ops.add_noise)
     bench.run()
+
+
+@pytest.mark.convolve
+@pytest.mark.parametrize("mode", ["full", "same"])
+def test_perf_convolve(mode):
+    def convolve_input(shape, dtype, device):
+        b, n, m = shape
+        x = torch.randn(b, n, device=device, dtype=dtype)
+        # 共享核：y 前导维为 1，等价于所有信号复用同一条冲激响应
+        y = torch.randn(1, m, device=device, dtype=dtype)
+        # mode 是字符串，必须走 kwargs（unpack_to_args_kwargs 只透传张量/数字/None）
+        yield x, y, {"mode": mode}
+
+    def ref_op(x, y, mode):
+        return torchaudio.functional.convolve(x, y, mode)
+
+    bench = SpectralBenchmark(
+        op_name="convolve",
+        input_fn=convolve_input,
+        torch_op=ref_op,
+        dtypes=[
+            torch.float32,
+        ],
+    )
+    bench.set_gems(flag_audio.ops.convolve)
+    bench.run()

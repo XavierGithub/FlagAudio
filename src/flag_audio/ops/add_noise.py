@@ -33,7 +33,7 @@ def partial_energy_kernel(
     pid = tl.program_id(0)
     b = pid // T
     tile = pid % T
-
+    
     offsets = tile * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     # 两层 mask：段边界 + lengths 有效区
     mask = offsets < L
@@ -82,7 +82,7 @@ def finalize_scale_kernel(
     )
     tl.store(scale_ptr + b, scale)
 
-
+# 用triton.jit 装饰kernel函数
 @triton.jit
 def apply_noise_kernel(
     waveform_ptr,  # (batch, L)
