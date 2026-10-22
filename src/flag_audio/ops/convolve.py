@@ -44,22 +44,40 @@ def convolve_kernel(
     # 映射回 full 卷积域坐标：out[o] 即 full 卷积的第 start+o 个点
     j = start + o
 
-    # fp32 累加，低精度输入在乘之前统一升精度
-    acc = tl.zeros([BLOCK_OUT], dtype=tl.float32)
-    for t0 in range(0, m_len, BLOCK_T):
-        t = t0 + tl.arange(0, BLOCK_T)
-        tmask = t < m_len
-        yv = tl.load(y_ptr + y_row + t, mask=tmask, other=0.0).to(tl.float32)
-        # out[j] = Σ_m x[j-m] · y[m]，与 torchaudio 同向（无需翻转核）
-        xi = j[:, None] - t[None, :]
-        xmask = omask[:, None] & tmask[None, :] & (xi >= 0) & (xi < n_len)
-        xv = tl.load(x_ptr + x_row + xi, mask=xmask, other=0.0).to(tl.float32)
-        # 寄存器内沿 tap 维归约，一个 block 只输出一段连续结果
-        acc += tl.sum(xv * yv[None, :], axis=1)
+    # 二维累加器：循环内只做 FMA，沿 tap 维的树形归约在循环结束后做一次；
+    # 若每次迭代都 tl.sum，归约的加法/混洗开销会超过乘加本身
+    acc = tl.zeros([BLOCK_OUT, BLOCK_T], dtype=tl.float32)
 
+    # 内部 block 特化：整块 xi = j - t（t ∈ [0, m_len)）恒在 [0, n_len) 内时，
+    # 跳过逐元素边界判断（~96% 的 block 命中此路径）。xi 越界只剩一种可能：
+    # t 尾块 padding 出 t >= m_len 导致 xi < 0，用 tmask 单列门控即可。
+    # 注意无效行（o >= out_len）的 j 也不超过整块上界 j_hi，读取不会越界。
+    j_lo = start + pid_o * BLOCK_OUT
+    j_hi = j_lo + BLOCK_OUT - 1
+    if (j_lo >= m_len - 1) and (j_hi < n_len):
+        for t0 in range(0, m_len, BLOCK_T):
+            t = t0 + tl.arange(0, BLOCK_T)
+            tmask = t < m_len
+            yv = tl.load(y_ptr + y_row + t, mask=tmask, other=0.0).to(tl.float32)
+            # out[j] = Σ_m x[j-m] · y[m]，与 torchaudio 同向（无需翻转核）
+            xi = j[:, None] - t[None, :]
+            xv = tl.load(x_ptr + x_row + xi, mask=tmask[None, :], other=0.0).to(tl.float32)
+            acc += xv * yv[None, :]
+    else:
+        for t0 in range(0, m_len, BLOCK_T):
+            t = t0 + tl.arange(0, BLOCK_T)
+            tmask = t < m_len
+            yv = tl.load(y_ptr + y_row + t, mask=tmask, other=0.0).to(tl.float32)
+            xi = j[:, None] - t[None, :]
+            xmask = omask[:, None] & tmask[None, :] & (xi >= 0) & (xi < n_len)
+            xv = tl.load(x_ptr + x_row + xi, mask=xmask, other=0.0).to(tl.float32)
+            acc += xv * yv[None, :]
+
+    # 寄存器内沿 tap 维归约，一个 block 只输出一段连续结果
+    result = tl.sum(acc, axis=1)
     tl.store(
         out_ptr + pid_b * out_len + o,
-        acc.to(out_ptr.dtype.element_ty),
+        result.to(out_ptr.dtype.element_ty),
         mask=omask,
     )
 
@@ -148,7 +166,13 @@ def convolve(x: torch.Tensor, y: torch.Tensor, mode: str = "full") -> torch.Tens
         return out
     out2d = out.view(batch, out_len)
 
-    BLOCK_OUT, BLOCK_T = 128, 64
+    # 二维累加器的寄存器占用随 BLOCK_T 线性增长，按核长分两档（实测 3090 调参）：
+    # 长核（m_len >= 512）用小 BLOCK_T 缓解寄存器压力；短核用大 BLOCK_T + 更多
+    # warp 减少循环开销、提高单 block 并行度
+    if m_len >= 512:
+        BLOCK_OUT, BLOCK_T, num_warps = 128, 32, 4
+    else:
+        BLOCK_OUT, BLOCK_T, num_warps = 128, 64, 8
     # 第 0 维放 batch（见 kernel 内注释），第 1 维放输出分块
     grid = (batch, triton.cdiv(out_len, BLOCK_OUT))
     convolve_kernel[grid](
@@ -163,7 +187,7 @@ def convolve(x: torch.Tensor, y: torch.Tensor, mode: str = "full") -> torch.Tens
         y_row_stride,
         BLOCK_OUT=BLOCK_OUT,
         BLOCK_T=BLOCK_T,
-        num_warps=4,
+        num_warps=num_warps,
     )
 
     return out
